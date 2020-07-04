@@ -6,7 +6,8 @@ pub struct CourseInfo {
     pub desc: String,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct Schedule {
+    pub username: String,
     pub courses: Vec<String>,
 }

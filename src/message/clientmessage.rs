@@ -1,4 +1,4 @@
-use crate::db::Schedule;
+use crate::actors::dbserver::models::Schedule;
 use actix::prelude::*;
 
 // Message Parameters
