@@ -36,8 +36,6 @@ impl Handler<InitiateSync> for SyncServer {
 
 impl Actor for SyncServer {
     type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {}
 }
 
 impl SystemService for SyncServer {}
