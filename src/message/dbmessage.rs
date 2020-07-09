@@ -1,5 +1,6 @@
 use crate::actors::dbserver::models::Schedule;
 use actix::prelude::*;
+use crdts::orswot::Orswot;
 use mongodb::error::Error;
 
 // parameters: username
@@ -16,3 +17,7 @@ pub struct DbCreateUser(pub String);
 #[derive(Clone, Message)]
 #[rtype(result = "Result<bool, Error>")]
 pub struct DbUpdateSchedule(pub String, pub Schedule);
+
+#[derive(Clone, Message)]
+#[rtype(result = "()")]
+pub struct DbUpdateCache(pub String, pub Orswot<String, u8>);

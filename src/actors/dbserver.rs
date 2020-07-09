@@ -1,11 +1,15 @@
 use crate::message::dbmessage::*;
 use actix::prelude::*;
+use actix::utils::IntervalFunc;
+use crdts::orswot::Orswot;
 use models::*;
 use mongodb::bson::{doc, from_bson, to_bson, Bson};
 use mongodb::error::Error;
 use mongodb::options::{UpdateModifications, UpdateOptions};
 use mongodb::Client;
+use std::collections::HashMap;
 use std::env::var;
+use std::time::Duration;
 
 pub mod models;
 
@@ -16,6 +20,7 @@ const COURSE_COL: &'static str = "courses";
 #[derive(Default)]
 pub struct DbServer {
     handle: Option<Client>,
+    cache: HashMap<String, (bool, Orswot<String, u8>)>,
 }
 
 impl Actor for DbServer {
@@ -34,6 +39,32 @@ impl Actor for DbServer {
             act.handle = Some(res);
             actix::fut::ready(())
         }));
+
+        IntervalFunc::new(
+            Duration::from_secs(3),
+            |act: &mut Self, ctx: &mut Self::Context| {
+                for (username, (updated, crdt)) in &act.cache {
+                    if !updated {
+                        let new_sched = Schedule {
+                            username: username.clone(),
+                            courses: crdt.clone().read().val.into_iter().collect::<Vec<String>>(),
+                        };
+                        ctx.address()
+                            .recipient()
+                            .send(DbUpdateSchedule(username.clone(), new_sched))
+                            .into_actor(act)
+                            .then(|_, _, _| fut::ready(()))
+                            .spawn(ctx);
+                    }
+                }
+
+                for (_, tp) in &mut act.cache {
+                    tp.0 = true;
+                }
+            },
+        )
+        .finish()
+        .spawn(ctx);
     }
 }
 
@@ -94,6 +125,14 @@ impl Handler<DbUpdateSchedule> for DbServer {
 
             Ok(update_result.modified_count == 1)
         })
+    }
+}
+
+impl Handler<DbUpdateCache> for DbServer {
+    type Result = ();
+    fn handle(&mut self, msg: DbUpdateCache, _ctx: &mut Self::Context) -> Self::Result {
+        let DbUpdateCache(user, sched) = msg;
+        self.cache.insert(user, (false, sched));
     }
 }
 

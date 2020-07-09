@@ -104,15 +104,22 @@ impl Handler<InitiateSync> for SyncServer {
 impl Handler<UpdateSchedule> for SyncServer {
     type Result = ();
 
-    fn handle(&mut self, msg: UpdateSchedule, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: UpdateSchedule, ctx: &mut Self::Context) -> Self::Result {
         let UpdateSchedule(username, recp, op) = msg;
-
-        // TODO: Send to DB for persistence
 
         self.crdt_ref
             .get_mut(&username)
             .expect("at least one session initiated sync")
             .apply(op.clone());
+
+        DbServer::from_registry().do_send(DbUpdateCache(
+            username.clone(),
+            self.crdt_ref
+                .get(&username)
+                .expect("at least one session initiated sync")
+                .clone(),
+        ));
+
         for tx in self
             .observers
             .get(&username)
