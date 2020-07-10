@@ -1,11 +1,14 @@
+use crate::actors::dbserver::models::Schedule;
 use crate::dbserver::DbServer;
 use crate::message::clientmessage::*;
 use crate::message::dbmessage::*;
 use actix::prelude::*;
+use actix::utils::IntervalFunc;
 use crdts::orswot::Orswot;
 use crdts::CmRDT;
 use rand::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 type ClientRecv = Recipient<ScheduleMessage>;
 
@@ -17,6 +20,8 @@ pub struct SyncServer {
     observers: HashMap<String, Vec<ClientRecv>>,
     // reference crdt for each user
     crdt_ref: HashMap<String, Orswot<String, u8>>,
+    // boolean flag of whether crdt was changed since last sync with db
+    crdt_updated: HashMap<String, bool>,
 }
 
 impl SyncServer {
@@ -86,6 +91,7 @@ impl Handler<InitiateSync> for SyncServer {
                     Some((s, username, recp)) => {
                         let mut crdt = Orswot::new();
                         crdt.apply(crdt.add_all(s.courses, crdt.read_ctx().derive_add_ctx(1)));
+                        act.crdt_updated.insert(username.clone(), true);
 
                         let mut hashset = HashSet::new();
                         hashset.insert(1);
@@ -104,21 +110,15 @@ impl Handler<InitiateSync> for SyncServer {
 impl Handler<UpdateSchedule> for SyncServer {
     type Result = ();
 
-    fn handle(&mut self, msg: UpdateSchedule, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: UpdateSchedule, _ctx: &mut Self::Context) -> Self::Result {
         let UpdateSchedule(username, recp, op) = msg;
+
+        self.crdt_updated.insert(username.clone(), false);
 
         self.crdt_ref
             .get_mut(&username)
             .expect("at least one session initiated sync")
             .apply(op.clone());
-
-        DbServer::from_registry().do_send(DbUpdateCache(
-            username.clone(),
-            self.crdt_ref
-                .get(&username)
-                .expect("at least one session initiated sync")
-                .clone(),
-        ));
 
         for tx in self
             .observers
@@ -136,6 +136,42 @@ impl Handler<UpdateSchedule> for SyncServer {
 
 impl Actor for SyncServer {
     type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        IntervalFunc::new(
+            Duration::from_secs(3),
+            |act: &mut Self, ctx: &mut Self::Context| {
+                for (username, updated) in &act.crdt_updated {
+                    if !updated {
+                        let new_sched = Schedule {
+                            username: username.clone(),
+                            courses: act
+                                .crdt_ref
+                                .get(username)
+                                .expect("crdt must be present if in updated hashmap")
+                                .clone()
+                                .read()
+                                .val
+                                .into_iter()
+                                .collect::<Vec<String>>(),
+                        };
+
+                        DbServer::from_registry()
+                            .send(DbUpdateSchedule(username.clone(), new_sched))
+                            .into_actor(act)
+                            .then(|_, _, _| fut::ready(()))
+                            .spawn(ctx);
+                    }
+                }
+
+                for (_, updated) in &mut act.crdt_updated {
+                    *updated = true;
+                }
+            },
+        )
+        .finish()
+        .spawn(ctx);
+    }
 }
 
 impl SystemService for SyncServer {}
