@@ -134,6 +134,20 @@ impl Handler<UpdateSchedule> for SyncServer {
     }
 }
 
+impl Handler<CreateUser> for SyncServer {
+    type Result = ResponseFuture<Result<bool, std::convert::Infallible>>;
+    fn handle(&mut self, msg: CreateUser, _ctx: &mut Self::Context) -> Self::Result {
+        let CreateUser(user) = msg;
+        Box::pin(async move {
+            let res = DbServer::from_registry().send(DbCreateUser(user)).await;
+            match res {
+                Ok(Ok(b)) => Ok(b),
+                _ => Ok(false),
+            }
+        })
+    }
+}
+
 impl Actor for SyncServer {
     type Context = Context<Self>;
 

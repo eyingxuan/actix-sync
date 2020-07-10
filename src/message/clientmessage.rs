@@ -16,3 +16,7 @@ pub struct UpdateSchedule(
 #[derive(Clone, Message)]
 #[rtype(result = "()")]
 pub struct ScheduleMessage(pub Op<String, u8>);
+
+#[derive(Clone, Message)]
+#[rtype(result = "Result<bool, std::convert::Infallible>")]
+pub struct CreateUser(pub String);

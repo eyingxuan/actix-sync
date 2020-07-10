@@ -72,7 +72,7 @@ impl Handler<DbCreateUser> for DbServer {
                 .update_one(doc! { "username": user.clone() }, modif, opt)
                 .await?;
 
-            Ok(update_result.upserted_id.is_none())
+            Ok(update_result.upserted_id.is_some())
         })
     }
 }

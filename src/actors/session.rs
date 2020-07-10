@@ -62,6 +62,25 @@ impl SyncClientSession {
             .then(|_, _, _| fut::ready(()))
             .spawn(ctx);
     }
+
+    fn create_user(&mut self, username: String, ctx: &mut ws::WebsocketContext<Self>) {
+        let msg = CreateUser(username);
+        SyncServer::from_registry()
+            .send(msg)
+            .into_actor(self)
+            .then(|res, _, ctx| {
+                if res
+                    .expect("assume channel did not fail")
+                    .expect("infallible")
+                {
+                    ctx.text("succeeded");
+                } else {
+                    ctx.text("failed");
+                }
+                fut::ready(())
+            })
+            .spawn(ctx);
+    }
 }
 
 impl Handler<ScheduleMessage> for SyncClientSession {
@@ -98,6 +117,8 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SyncClientSession
                     self.update_course(CourseUpdate::Add(cmds[1].to_owned()), ctx);
                 } else if cmds[0] == "/rem" {
                     self.update_course(CourseUpdate::Rem(cmds[1].to_owned()), ctx);
+                } else if cmds[0] == "/create" {
+                    self.create_user(cmds[1].to_owned(), ctx);
                 }
             }
             _ => {}
