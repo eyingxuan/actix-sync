@@ -6,6 +6,7 @@ use crdts::CmRDT;
 
 use crate::actors::syncserver::SyncServer;
 use crate::message::clientmessage::*;
+use std::collections::HashSet;
 
 enum CourseUpdate {
     Add(String),
@@ -20,6 +21,10 @@ pub struct SyncClientSession {
 }
 
 impl SyncClientSession {
+    fn format_schedule(val: HashSet<String>) -> String {
+        format!("{:?}", val.into_iter().collect::<Vec<String>>())
+    }
+
     fn initiate_sync(&mut self, username: String, ctx: &mut ws::WebsocketContext<Self>) {
         SyncServer::from_registry()
             .send(InitiateSync(ctx.address().recipient(), username.clone()))
@@ -31,10 +36,12 @@ impl SyncClientSession {
                 match opt {
                     None => ctx.text("invalid username"),
                     Some((crdt, id)) => {
+                        let crdt_val = crdt.read().val;
                         act.schedule_crdt = Some(crdt);
                         act.id = id;
                         act.username = Some(username);
-                        ctx.text("initiation success");
+                        ctx.text(SyncClientSession::format_schedule(crdt_val));
+                        // ctx.text("initiation success");
                     }
                 }
                 fut::ready(())
@@ -51,7 +58,7 @@ impl SyncClientSession {
         };
 
         crdt.apply(update.clone());
-        ctx.text(format!("{:?}", crdt.read().val));
+        ctx.text(SyncClientSession::format_schedule(crdt.read().val));
         SyncServer::from_registry()
             .send(UpdateSchedule(
                 self.username.clone().expect("must initiate sync"),
@@ -73,9 +80,9 @@ impl SyncClientSession {
                     .expect("assume channel did not fail")
                     .expect("infallible")
                 {
-                    ctx.text("succeeded");
+                    // ctx.text("succeeded");
                 } else {
-                    ctx.text("failed");
+                    // ctx.text("failed");
                 }
                 fut::ready(())
             })
@@ -89,7 +96,7 @@ impl Handler<ScheduleMessage> for SyncClientSession {
         let ScheduleMessage(op) = msg;
         let crdt = self.schedule_crdt.as_mut().unwrap();
         crdt.apply(op);
-        ctx.text(format!("{:?}", crdt.read().val));
+        ctx.text(SyncClientSession::format_schedule(crdt.read().val));
     }
 }
 
