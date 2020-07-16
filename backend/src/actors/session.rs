@@ -6,18 +6,35 @@ use crdts::CmRDT;
 
 use crate::actors::syncserver::SyncServer;
 use crate::message::clientmessage::*;
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
+
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
 
 enum CourseUpdate {
     Add(String),
     Rem(String),
 }
 
-#[derive(Default)]
 pub struct SyncClientSession {
     username: Option<String>,
     schedule_crdt: Option<Orswot<String, u8>>,
     id: u8,
+    hb: Instant,
+}
+
+impl Default for SyncClientSession {
+    fn default() -> Self {
+        SyncClientSession {
+            username: None,
+            schedule_crdt: None,
+            id: 0,
+            hb: Instant::now(),
+        }
+    }
 }
 
 impl SyncClientSession {
@@ -75,7 +92,7 @@ impl SyncClientSession {
         SyncServer::from_registry()
             .send(msg)
             .into_actor(self)
-            .then(|res, _, ctx| {
+            .then(|res, _, _| {
                 if res
                     .expect("assume channel did not fail")
                     .expect("infallible")
@@ -87,6 +104,20 @@ impl SyncClientSession {
                 fut::ready(())
             })
             .spawn(ctx);
+    }
+
+    fn disconnect_session(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
+        // TODO: fix unwrap
+        let msg = DisconnectSync(
+            self.username.clone().unwrap(),
+            self.id,
+            ctx.address().recipient(),
+        );
+        SyncServer::from_registry()
+            .send(msg)
+            .into_actor(self)
+            .then(|_, _, _| fut::ready(()))
+            .wait(ctx);
     }
 }
 
@@ -102,6 +133,17 @@ impl Handler<ScheduleMessage> for SyncClientSession {
 
 impl Actor for SyncClientSession {
     type Context = ws::WebsocketContext<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
+            if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
+                act.disconnect_session(ctx);
+                ctx.stop();
+                return;
+            }
+            ctx.ping(b"");
+        });
+    }
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SyncClientSession {
@@ -127,6 +169,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SyncClientSession
                 } else if cmds[0] == "/create" {
                     self.create_user(cmds[1].to_owned(), ctx);
                 }
+            }
+            ws::Message::Pong(_) => {
+                self.hb = Instant::now();
             }
             _ => {}
         }

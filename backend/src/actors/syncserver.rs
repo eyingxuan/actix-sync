@@ -17,7 +17,7 @@ pub struct SyncServer {
     // unique IDs for each user
     client_ids: HashMap<String, HashSet<u8>>,
     // recv end for each user
-    observers: HashMap<String, Vec<ClientRecv>>,
+    observers: HashMap<String, HashSet<ClientRecv>>,
     // reference crdt for each user
     crdt_ref: HashMap<String, Orswot<String, u8>>,
     // boolean flag of whether crdt was changed since last sync with db
@@ -54,7 +54,7 @@ impl Handler<InitiateSync> for SyncServer {
             self.observers
                 .get_mut(&username)
                 .expect("key must be present in this branch")
-                .push(recp);
+                .insert(recp);
 
             let unique_id: u8 = self
                 .gen_id(&username)
@@ -96,13 +96,33 @@ impl Handler<InitiateSync> for SyncServer {
                         let mut hashset = HashSet::new();
                         hashset.insert(1);
 
+                        let mut observer_hashset = HashSet::new();
+                        observer_hashset.insert(recp);
+
                         act.client_ids.insert(username.clone(), hashset);
-                        act.observers.insert(username.clone(), vec![recp]);
+                        act.observers.insert(username.clone(), observer_hashset);
                         act.crdt_ref.insert(username.clone(), crdt.clone());
                         Ok(Some((crdt, 1)))
                     }
                 }),
             )
+        }
+    }
+}
+
+impl Handler<DisconnectSync> for SyncServer {
+    type Result = ();
+    fn handle(&mut self, msg: DisconnectSync, _ctx: &mut Self::Context) -> Self::Result {
+        let DisconnectSync(username, id, recp) = msg;
+        // TODO: fix unwraps
+        self.client_ids.get_mut(&username).unwrap().remove(&id);
+        self.observers.get_mut(&username).unwrap().remove(&recp);
+
+        if self.client_ids.get(&username).unwrap().len() == 0 {
+            self.client_ids.remove(&username);
+            self.observers.remove(&username);
+            self.crdt_ref.remove(&username);
+            self.crdt_updated.remove(&username);
         }
     }
 }
