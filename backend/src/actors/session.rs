@@ -12,7 +12,7 @@ use std::{
 };
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(5);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
 enum CourseUpdate {
     Add(String),
@@ -108,6 +108,7 @@ impl SyncClientSession {
 
     fn disconnect_session(&mut self, ctx: &mut ws::WebsocketContext<Self>) {
         // TODO: fix unwrap
+        println!("function called");
         let msg = DisconnectSync(
             self.username.clone().unwrap(),
             self.id,
@@ -144,6 +145,8 @@ impl Actor for SyncClientSession {
             ctx.ping(b"");
         });
     }
+
+    fn stopped(&mut self, ctx: &mut Self::Context) {}
 }
 
 impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SyncClientSession {
@@ -172,6 +175,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for SyncClientSession
             }
             ws::Message::Pong(_) => {
                 self.hb = Instant::now();
+            }
+            ws::Message::Close(_) => {
+                self.disconnect_session(ctx);
             }
             _ => {}
         }

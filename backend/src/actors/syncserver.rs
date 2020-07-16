@@ -28,6 +28,7 @@ impl SyncServer {
     // returns None when no set is created for the user
     fn gen_id(&self, username: &String) -> Option<u8> {
         let set = self.client_ids.get(username)?;
+        println!("{}", set.len());
         if set.len() == 256 {
             panic!("way too many people are using my application");
         } else {
@@ -114,6 +115,7 @@ impl Handler<DisconnectSync> for SyncServer {
     type Result = ();
     fn handle(&mut self, msg: DisconnectSync, _ctx: &mut Self::Context) -> Self::Result {
         let DisconnectSync(username, id, recp) = msg;
+        println!("disconnect {}", username);
         // TODO: fix unwraps
         self.client_ids.get_mut(&username).unwrap().remove(&id);
         self.observers.get_mut(&username).unwrap().remove(&recp);
